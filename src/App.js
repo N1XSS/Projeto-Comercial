@@ -1,10 +1,11 @@
 import React, { useState, createContext, useContext, useEffect, useRef } from 'react';
-// Removed unused icons: Wheat, Feather, Box
+// Ensure all used icons are listed
 import { 
   BarChart, DollarSign, ShoppingCart, TrendingUp, Tractor, FileText, Settings, LogOut, 
   ChevronDown, ChevronRight, Bell, Search, Calendar, Download, Sun, Moon, 
   Briefcase, BarChart2, PieChart as PieChartIcon, List, Grid, ArrowRightLeft, Package, 
-  Scale, Percent, Bean, Beef, Menu, X, Cloud, Carrot, CircleDot 
+  Scale, Percent, Bean, Beef, Menu, X, Cloud, Carrot, CircleDot, UserPlus, AlertTriangle,
+  ArrowUp, ArrowDown, Minus // Icons for Ticker
 } from 'lucide-react'; 
 
 // Constants for brand colors from the manual
@@ -24,12 +25,22 @@ const BRAND_COLORS = {
 };
 
 // Context for managing theme (dark/light mode)
-const ThemeContext = createContext();
-const useTheme = () => useContext(ThemeContext);
+const ThemeContext = createContext(null);
+const useTheme = () => {
+    const context = useContext(ThemeContext);
+    if (!context) throw new Error('useTheme must be used within a ThemeProvider');
+    return context;
+};
+
 
 // Context for Sidebar state
-const SidebarContext = createContext();
-const useSidebar = () => useContext(SidebarContext);
+const SidebarContext = createContext(null);
+const useSidebar = () => {
+    const context = useContext(SidebarContext);
+    if (!context) throw new Error('useSidebar must be used within a SidebarProvider');
+    return context;
+};
+
 
 // Mock User Data
 const mockUser = {
@@ -48,31 +59,72 @@ const mockNotifications = [
 // Logo URL
 const LOGO_URL = "https://static.wixstatic.com/media/961011_68c256f18a4840ad901e5687bd719798~mv2.png/v1/crop/x_108,y_44,w_583,h_236/fill/w_145,h_57,al_c,q_85,usm_0.66_1.00_0.01,enc_avif,quality_auto/LOGO-03.png"; 
 
+// --- Error Boundary Component ---
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null, errorInfo: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error: error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error("Uncaught error:", error, errorInfo);
+    this.setState({ errorInfo: errorInfo });
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex flex-col items-center justify-center h-screen bg-red-100 text-red-700 p-4">
+           <AlertTriangle size={48} className="mb-4"/>
+          <h1 className="text-2xl font-bold mb-2">Ocorreu um erro!</h1>
+          <p className="mb-4 text-center">Algo deu errado ao tentar renderizar esta parte da aplicação. Por favor, tente recarregar a página.</p>
+          <details className="mb-4 text-xs bg-red-50 p-2 rounded overflow-auto max-w-full w-full text-left">
+            <summary>Detalhes do erro (clique para expandir)</summary>
+            <pre className="mt-2 whitespace-pre-wrap">
+              {this.state.error && this.state.error.toString()}
+              <br />
+              {this.state.errorInfo && this.state.errorInfo.componentStack}
+            </pre>
+          </details>
+           <button 
+             onClick={() => this.setState({ hasError: false, error: null, errorInfo: null })} 
+             className="mt-4 px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600 mr-2"
+           >
+             Tentar renderizar novamente
+           </button>
+           <button 
+             onClick={() => window.location.reload()} 
+             className="mt-4 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+           >
+             Recarregar Página
+           </button>
+        </div>
+      );
+    }
+    return this.props.children; 
+  }
+}
+
 // --- App Component ---
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [currentPage, setCurrentPage] = useState('Visão Geral');
   const [theme, setTheme] = useState('light'); 
-  const [isSidebarExpanded, setIsSidebarExpanded] = useState(false); // Start collapsed on desktop
+  const [isSidebarExpanded, setIsSidebarExpanded] = useState(false); 
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [showLogin, setShowLogin] = useState(true); 
 
   const toggleTheme = () => {
     setTheme(prevTheme => (prevTheme === 'light' ? 'dark' : 'light'));
   };
 
-  // Toggle fixed expanded state (for desktop)
-  const toggleSidebar = () => {
-    setIsSidebarExpanded(prev => !prev);
-  };
-  
-  // Explicitly set fixed expanded state (used when clicking icons in collapsed mode)
-  const setSidebarExpanded = (expanded) => {
-      setIsSidebarExpanded(expanded);
-  }
-
-  const toggleMobileSidebar = () => {
-    setIsMobileSidebarOpen(prev => !prev);
-  }
+  const toggleSidebar = () => setIsSidebarExpanded(prev => !prev);
+  const setSidebarExpanded = (expanded) => setIsSidebarExpanded(expanded);
+  const toggleMobileSidebar = () => setIsMobileSidebarOpen(prev => !prev);
   
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
@@ -80,60 +132,163 @@ function App() {
 
   useEffect(() => {
     const handleResize = () => {
-      if (window.innerWidth >= 768) { 
-        setIsMobileSidebarOpen(false);
-      }
+      if (window.innerWidth >= 768) setIsMobileSidebarOpen(false);
     };
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Silencing the specific eslint warning for isMobileSidebarOpen if it persists
-  // console.log("Mobile sidebar state:", isMobileSidebarOpen); // Uncomment if needed to satisfy linter
-
-  if (!isAuthenticated) {
-    return (
-      <ThemeContext.Provider value={{ theme, toggleTheme }}>
-        <LoginPage onLogin={() => setIsAuthenticated(true)} />
-      </ThemeContext.Provider>
-    );
-  }
+  useEffect(() => {
+    if (document.body) { 
+      document.body.classList.toggle('mobile-sidebar-open', isMobileSidebarOpen);
+    }
+  }, [isMobileSidebarOpen]);
 
   return (
-    <ThemeContext.Provider value={{ theme, toggleTheme }}>
-      {/* Pass setSidebarExpanded to context */}
-      <SidebarContext.Provider value={{ isSidebarExpanded, toggleSidebar, setSidebarExpanded, isMobileSidebarOpen, toggleMobileSidebar, setCurrentPage }}>
+     <ThemeContext.Provider value={{ theme, toggleTheme }}>
+       <ErrorBoundary>
+         {!isAuthenticated ? (
+           showLogin ? (
+             <LoginPage 
+               onLogin={() => setIsAuthenticated(true)} 
+               onGoToRegister={() => setShowLogin(false)} 
+             />
+           ) : (
+             <RegistrationPage onGoToLogin={() => setShowLogin(true)} />
+           )
+         ) : (
+           <SidebarContext.Provider value={{ isSidebarExpanded, toggleSidebar, setSidebarExpanded, isMobileSidebarOpen, toggleMobileSidebar, setCurrentPage }}>
+               <MainLayout 
+                 currentPage={currentPage} 
+                 onLogout={() => {
+                     setIsAuthenticated(false); 
+                     setCurrentPage('Visão Geral'); 
+                     setIsSidebarExpanded(false); 
+                     setIsMobileSidebarOpen(false);
+                 }} 
+                 setCurrentPage={setCurrentPage} 
+               />
+           </SidebarContext.Provider>
+         )}
+       </ErrorBoundary>
+     </ThemeContext.Provider>
+  );
+}
+
+// --- Ticker Component ---
+function Ticker() {
+  const { theme } = useTheme();
+  const tickerData = [
+    { id: 1, name: "USD/BRL", price: "5.4572", change: "+0.0015", trend: "up" },
+    { id: 2, name: "Algodão NY", price: "78.50", change: "-0.25", trend: "down", unit: "¢/lb" },
+    { id: 3, name: "Soja CHI", price: "1177.25", change: "+2.50", trend: "up", unit: "¢/bu" },
+    { id: 4, name: "Milho CHI", price: "450.75", change: "0.00", trend: "stable", unit: "¢/bu" },
+    { id: 5, name: "Boi Gordo B3", price: "225.80", change: "-1.10", trend: "down", unit: "R$/@" },
+    { id: 6, name: "Café ARA NY", price: "220.15", change: "+1.80", trend: "up", unit: "¢/lb" },
+  ];
+
+  // Duplicate data for seamless scrolling effect
+  const duplicatedTickerData = [...tickerData, ...tickerData];
+
+  const getTrendColor = (trend) => {
+    if (trend === "up") return BRAND_COLORS.success;
+    if (trend === "down") return BRAND_COLORS.danger;
+    return theme === 'dark' ? BRAND_COLORS.neutralGray : BRAND_COLORS.textSecondary;
+  };
+
+  return (
+    <>
+      {/* CSS for ticker animation - embedded for simplicity */}
+      <style>
+        {`
+          .ticker-wrap {
+            width: 100%;
+            overflow: hidden;
+            padding: 0.5rem 0; /* py-2 */
+            box-sizing: border-box;
+          }
+          .ticker-move {
+            display: inline-flex; /* Changed from flex to inline-flex for better animation control */
+            white-space: nowrap;
+            animation: ticker-scroll 40s linear infinite; /* Adjust duration as needed */
+          }
+          .ticker-move:hover {
+            animation-play-state: paused;
+          }
+          .ticker-item {
+            display: inline-block; /* Ensure items are inline */
+            margin-right: 2rem; /* mx-4 equivalent for right margin */
+            font-size: 0.875rem; /* text-sm */
+          }
+          @keyframes ticker-scroll {
+            0% {
+              transform: translateX(0%);
+            }
+            100% {
+              transform: translateX(-50%); /* Scroll by half the width because items are duplicated */
+            }
+          }
+        `}
+      </style>
+      <div 
+        className={`ticker-wrap ${theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-gray-100 border-gray-200'} border-b border-t`}
+      >
+        <div className="ticker-move">
+          {duplicatedTickerData.map((item, index) => (
+            <div key={`${item.id}-${index}`} className="ticker-item">
+              <span className={`font-semibold ${theme === 'dark' ? 'text-gray-300' : BRAND_COLORS.textSecondary}`}>
+                {item.name}:
+              </span>
+              <span className={`ml-1 font-bold ${theme === 'dark' ? 'text-white' : BRAND_COLORS.textPrimary}`}>
+                {item.price}
+              </span>
+              {item.unit && <span className={`ml-0.5 text-xs ${theme === 'dark' ? 'text-gray-400' : BRAND_COLORS.textSecondary}`}>{item.unit}</span>}
+              <span className="ml-2 inline-flex items-center" style={{ color: getTrendColor(item.trend) }}>
+                {item.trend === "up" && <ArrowUp size={12} className="mr-0.5" />}
+                {item.trend === "down" && <ArrowDown size={12} className="mr-0.5" />}
+                {item.trend === "stable" && <Minus size={12} className="mr-0.5" />}
+                {item.change}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </>
+  );
+}
+
+
+// --- MainLayout Component (Authenticated View) ---
+function MainLayout({ currentPage, onLogout, setCurrentPage }) {
+    const { theme } = useTheme();
+    const { isSidebarExpanded, isMobileSidebarOpen, toggleMobileSidebar } = useSidebar();
+
+    return (
         <div className={`flex h-screen font-inter antialiased ${theme === 'dark' ? 'bg-gray-900 text-gray-100' : 'bg-gray-100 text-gray-800'}`}>
           
-          {/* Sidebar container for desktop */}
           <div className="hidden md:block"> 
-             <Sidebar currentPage={currentPage} onLogout={() => setIsAuthenticated(false)} isMobile={false} />
+             <Sidebar currentPage={currentPage} onLogout={onLogout} isMobile={false} />
           </div>
 
-           {/* Mobile Sidebar (Sliding) */}
            <div className={`fixed inset-y-0 left-0 z-50 transform ${isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'} transition-transform duration-300 ease-in-out md:hidden shadow-lg`}>
-             {/* Pass isMobile=true here */}
-             <Sidebar currentPage={currentPage} onLogout={() => setIsAuthenticated(false)} isMobile={true} />
+             <Sidebar currentPage={currentPage} onLogout={onLogout} isMobile={true} />
            </div>
-           {/* Mobile Overlay */}
            {isMobileSidebarOpen && <div className="fixed inset-0 bg-black opacity-50 z-40 md:hidden" onClick={toggleMobileSidebar}></div>}
 
-
-          {/* Main Content Area: Adjust margin based on fixed expansion state */}
           <div className={`flex-1 flex flex-col overflow-hidden transition-all duration-300 ease-in-out ${isSidebarExpanded ? 'md:ml-64' : 'md:ml-20'}`}>
-            <Header currentPage={currentPage} onLogout={() => setIsAuthenticated(false)} />
+            <Header currentPage={currentPage} onLogout={onLogout} setCurrentPage={setCurrentPage} />
+            <Ticker /> {/* Added Ticker component here */}
             <main className="flex-1 overflow-x-hidden overflow-y-auto p-4 md:p-6"> 
               {renderPage(currentPage)}
             </main>
           </div>
         </div>
-      </SidebarContext.Provider>
-    </ThemeContext.Provider>
-  );
+    );
 }
 
-// --- LoginPage Component --- (No changes)
-function LoginPage({ onLogin }) {
+
+// --- LoginPage Component ---
+function LoginPage({ onLogin, onGoToRegister }) { 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState(''); 
@@ -184,6 +339,7 @@ function LoginPage({ onLogin }) {
             <input
               type="email"
               id="email"
+              autoComplete="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className={getInputClasses()}
@@ -197,16 +353,25 @@ function LoginPage({ onLogin }) {
             <input
               type="password"
               id="password"
+              autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className={getInputClasses()}
               placeholder="Sua senha"
             />
           </div>
-          <div className="flex items-center justify-between">
-            <a href="#!" className={`text-sm hover:underline`} style={{ color: BRAND_COLORS.primaryYellow }}>
+          <div className="flex items-center justify-between text-sm">
+            <a href="#!" className={`hover:underline`} style={{ color: BRAND_COLORS.primaryYellow }}>
               Esqueceu a senha?
             </a>
+             <button 
+               type="button" 
+               onClick={onGoToRegister} 
+               className={`hover:underline`} 
+               style={{ color: BRAND_COLORS.primaryGreen }}
+             >
+               Criar conta
+             </button>
           </div>
           <button
             type="submit"
@@ -224,18 +389,122 @@ function LoginPage({ onLogin }) {
   );
 }
 
+// --- RegistrationPage Component ---
+function RegistrationPage({ onGoToLogin }) {
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const { theme } = useTheme();
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+
+    if (!name || !email || !password || !confirmPassword) {
+      setError('Todos os campos são obrigatórios.');
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError('As senhas não coincidem.');
+      return;
+    }
+    if (password.length < 6) {
+       setError('A senha deve ter pelo menos 6 caracteres.');
+       return;
+    }
+
+    console.log('Registration attempt:', { name, email, password });
+    setSuccess('Cadastro simulado com sucesso! Você seria redirecionado ou logado.');
+    // setTimeout(onGoToLogin, 2000); 
+  };
+
+  const getInputClasses = () => {
+    let baseClasses = "mt-1 block w-full px-4 py-3 rounded-lg border shadow-sm focus:ring-opacity-50";
+    if (theme === 'dark') {
+      baseClasses += ` bg-gray-700 border-gray-600 text-white focus:border-[${BRAND_COLORS.primaryYellow}] focus:ring-[${BRAND_COLORS.primaryYellow}]`;
+    } else {
+      baseClasses += ` bg-white border-gray-300 focus:border-[${BRAND_COLORS.primaryYellow}] focus:ring-[${BRAND_COLORS.primaryYellow}]`;
+    }
+    return baseClasses;
+  };
+
+  return (
+    <div className={`min-h-screen flex items-center justify-center ${theme === 'dark' ? 'bg-gray-800' : 'bg-gray-100'} p-4`}>
+      <div className={`w-full max-w-md p-8 rounded-xl shadow-2xl ${theme === 'dark' ? 'bg-gray-900' : BRAND_COLORS.backgroundWhite}`}>
+        <img src={LOGO_URL} alt="Locks Logo" className="mx-auto mb-8 h-12 object-contain" />
+        <h2 className={`text-3xl font-bold text-center mb-2 ${theme === 'dark' ? 'text-white' : BRAND_COLORS.primaryGreen}`}>Criar Conta</h2>
+        <p className={`text-center text-sm mb-8 ${theme === 'dark' ? 'text-gray-400' : BRAND_COLORS.textSecondary}`}>
+          Preencha os dados para se cadastrar.
+        </p>
+        {error && (
+          <div className="mb-4 p-3 rounded-md bg-red-100 border border-red-300 text-red-700 text-sm">
+            {error}
+          </div>
+        )}
+         {success && (
+          <div className="mb-4 p-3 rounded-md bg-green-100 border border-green-300 text-green-700 text-sm">
+            {success}
+          </div>
+        )}
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label htmlFor="reg-name" className={`block text-sm font-medium ${theme === 'dark' ? 'text-gray-300' : BRAND_COLORS.textSecondary}`}>
+              Nome Completo
+            </label>
+            <input type="text" id="reg-name" value={name} onChange={(e) => setName(e.target.value)} className={getInputClasses()} placeholder="Seu nome" />
+          </div>
+          <div>
+            <label htmlFor="reg-email" className={`block text-sm font-medium ${theme === 'dark' ? 'text-gray-300' : BRAND_COLORS.textSecondary}`}>
+              E-mail
+            </label>
+            <input type="email" id="reg-email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} className={getInputClasses()} placeholder="seuemail@example.com" />
+          </div>
+          <div>
+            <label htmlFor="reg-password" className={`block text-sm font-medium ${theme === 'dark' ? 'text-gray-300' : BRAND_COLORS.textSecondary}`}>
+              Senha (mín. 6 caracteres)
+            </label>
+            <input type="password" id="reg-password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} className={getInputClasses()} placeholder="Crie uma senha" />
+          </div>
+           <div>
+            <label htmlFor="reg-confirm-password" className={`block text-sm font-medium ${theme === 'dark' ? 'text-gray-300' : BRAND_COLORS.textSecondary}`}>
+              Confirmar Senha
+            </label>
+            <input type="password" id="reg-confirm-password" autoComplete="new-password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className={getInputClasses()} placeholder="Repita a senha" />
+          </div>
+          
+          <button
+            type="submit"
+            className={`w-full text-white font-semibold py-3 px-4 rounded-lg shadow-md hover:opacity-90 transition duration-150 mt-6`} 
+            style={{ backgroundColor: BRAND_COLORS.primaryGreen }}
+          >
+            Cadastrar
+          </button>
+        </form>
+         <div className="text-center mt-6">
+           <button onClick={onGoToLogin} className={`text-sm hover:underline`} style={{ color: BRAND_COLORS.primaryGreen }}>
+             Já tem uma conta? Entrar
+           </button>
+         </div>
+        <p className={`text-center text-xs mt-8 ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
+          © {new Date().getFullYear()} Locks Agropecuária. Todos os direitos reservados.
+        </p>
+      </div>
+    </div>
+  );
+}
 
 // --- Sidebar Component ---
 function Sidebar({ currentPage, onLogout, isMobile }) {
   const { theme } = useTheme();
-  // Get state and setters from context
-  const { isSidebarExpanded, toggleSidebar, setSidebarExpanded, toggleMobileSidebar, setCurrentPage } = useSidebar();
-  const [openMenu, setOpenMenu] = useState(null); // State for accordion menu
-  const [isHovering, setIsHovering] = useState(false); // State for hover effect
-  const sidebarRef = useRef(null); // Ref for the sidebar element
+  const { isSidebarExpanded, toggleSidebar, toggleMobileSidebar, setCurrentPage, setSidebarExpanded } = useSidebar();
+  const [openMenu, setOpenMenu] = useState(null); 
+  const sidebarRef = useRef(null); 
 
-  // Determine if the sidebar should visually appear expanded (fixed, hover, or mobile)
-  const showExpanded = isMobile || isSidebarExpanded || isHovering;
+  const showExpanded = isMobile || isSidebarExpanded;
 
   const navItems = [
     { name: 'Visão Geral', icon: BarChart2, page: 'Visão Geral' },
@@ -279,82 +548,57 @@ function Sidebar({ currentPage, onLogout, isMobile }) {
     },
     { name: 'Relatórios', icon: FileText, page: 'Relatórios' },
     { name: 'Configurações', icon: Settings, page: 'Configurações' },
+    { name: 'Cadastro de Usuário', icon: UserPlus, page: 'Cadastro de Usuário' }, 
   ];
 
-  // --- Event Handlers ---
   const handleToggleAccordion = (itemName) => {
-    setOpenMenu(prevOpenMenu => (prevOpenMenu === itemName ? null : itemName));
+     setOpenMenu(prevOpenMenu => {
+       if (prevOpenMenu === itemName) return null;
+       setTimeout(() => setOpenMenu(itemName), 0); // Open new after current cycle allows closing
+       return null; // Close current immediately
+     });
   };
 
   const handleMainItemClick = (item) => {
     if (item.subItems) {
-      // If collapsed on desktop, expand fixed first, then toggle accordion
       if (!isSidebarExpanded && !isMobile) {
-        setSidebarExpanded(true); // Expand fixed
-        // Use setTimeout to allow the fixed expansion transition to start before opening accordion
-        setTimeout(() => {
-             handleToggleAccordion(item.name);
-        }, 50); // Small delay
+         setSidebarExpanded(true); 
+         setTimeout(() => handleToggleAccordion(item.name), 150); 
       } else {
-        // Otherwise (expanded desktop or mobile), just toggle accordion
-        handleToggleAccordion(item.name);
+         handleToggleAccordion(item.name);
       }
     } else {
-      // If it's a direct navigation item
       setCurrentPage(item.page);
-      setOpenMenu(null); // Close any open accordion
-      if (isMobile) {
-        toggleMobileSidebar(); // Close mobile sidebar
-      }
+      setOpenMenu(null); 
+      if (isMobile) toggleMobileSidebar(); 
     }
   };
 
   const handleSubmenuNavigate = (page) => {
      setCurrentPage(page);
-     if (isMobile) {
-       toggleMobileSidebar(); // Close mobile sidebar on navigation
-     }
+     if (isMobile) toggleMobileSidebar(); 
   }
 
-  const handleMouseEnter = () => {
-    if (!isSidebarExpanded && !isMobile) {
-      setIsHovering(true);
-    }
-  };
-
-  const handleMouseLeave = () => {
-    if (!isSidebarExpanded && !isMobile) {
-      setIsHovering(false);
-      setOpenMenu(null); // Close accordion when hover ends
-    }
-  };
-  
-  // --- Dynamic Styles ---
-  const sidebarBaseClasses = `h-full shadow-lg flex flex-col justify-between transition-width duration-300 ease-in-out ${theme === 'dark' ? 'bg-gray-800' : ''}`;
-  const sidebarDesktopPosition = isMobile ? '' : 'fixed inset-y-0 left-0 z-30'; // Higher z-index for hover overlay
+  const sidebarBaseClasses = `h-full shadow-lg flex flex-col justify-between transition-all duration-300 ease-in-out overflow-hidden ${theme === 'dark' ? 'bg-gray-800' : ''}`;
+  const sidebarDesktopPosition = isMobile ? '' : 'fixed inset-y-0 left-0 z-30'; 
   const sidebarWidth = isMobile ? 'w-64' : (isSidebarExpanded ? 'w-64' : 'w-20');
-  const hoverWidth = isHovering ? 'w-64' : sidebarWidth; // Apply hover width
+
+  const isActive = (page) => currentPage === page;
+  const isParentActive = (item) => item.subItems?.some(sub => isActive(sub.page)) ?? false;
 
   return (
     <div 
       ref={sidebarRef}
-      className={`${sidebarBaseClasses} ${sidebarDesktopPosition} ${hoverWidth}`} 
+      className={`${sidebarBaseClasses} ${sidebarDesktopPosition} ${sidebarWidth}`} 
       style={{ backgroundColor: theme === 'light' ? BRAND_COLORS.primaryGreen : '' }}
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
     >
-      <div>
-        {/* Header */}
-        <div className={`flex items-center h-20 px-4 ${showExpanded ? 'justify-between' : 'justify-center'}`}>
-          {showExpanded && (
-            <img src={LOGO_URL} alt="Locks Logo" className="h-8 object-contain" />
-          )}
+      <div className="flex flex-col h-full overflow-hidden"> 
+        <div className={`flex items-center h-20 px-4 flex-shrink-0 ${showExpanded ? 'justify-between' : 'justify-center'}`}>
+          <div className={`transition-opacity duration-200 ease-in-out ${showExpanded ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+             {showExpanded && <img src={LOGO_URL} alt="Locks Logo" className="h-8 object-contain"/>}
+          </div>
           {!isMobile && (
-            <button 
-              onClick={toggleSidebar} 
-              className={`p-2 rounded-md ${theme === 'dark' ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-100 hover:bg-white hover:bg-opacity-10'}`}
-              aria-label={isSidebarExpanded ? "Recolher menu" : "Expandir menu"}
-            >
+            <button onClick={toggleSidebar} className={`p-2 rounded-md ${theme === 'dark' ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-100 hover:bg-white hover:bg-opacity-10'}`} aria-label={isSidebarExpanded ? "Recolher menu" : "Expandir menu"}>
               <Menu size={20} />
             </button>
           )}
@@ -365,48 +609,43 @@ function Sidebar({ currentPage, onLogout, isMobile }) {
            )}
         </div>
 
-        {/* Navigation */}
-        <nav className="mt-2 flex-1 overflow-y-auto overflow-x-hidden"> {/* Hide horizontal overflow */}
+        <nav className="mt-2 flex-1 overflow-y-auto overflow-x-hidden"> 
           {navItems.map((item) => {
             const isAccordionOpen = openMenu === item.name; 
+            const itemIsActive = isActive(item.page);
+            const parentIsActive = !itemIsActive && isParentActive(item); 
+
+            let buttonClasses = `w-full flex items-center py-3 text-sm transition-colors duration-200 whitespace-nowrap ${showExpanded ? 'px-6 justify-between' : 'px-6 justify-center'}`;
+            let stateClasses = '';
+            if (itemIsActive && !item.subItems) {
+              stateClasses = theme === 'dark' ? 'bg-gray-700 text-white' : 'bg-white bg-opacity-20 text-white';
+            } else if (parentIsActive && showExpanded) {
+              stateClasses = theme === 'dark' ? 'bg-gray-600 text-gray-100' : 'bg-white bg-opacity-10 text-gray-50';
+            } else {
+              stateClasses = theme === 'dark' ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-100 hover:bg-white hover:bg-opacity-10';
+            }
+            
             return (
               <div key={item.name} className="overflow-hidden"> 
-                <button
-                  onClick={() => handleMainItemClick(item)}
-                  title={!showExpanded ? item.name : ''} // Tooltip when collapsed
-                  className={`
-                    w-full flex items-center py-3 text-sm transition-colors duration-200 group whitespace-nowrap
-                    ${showExpanded ? 'px-6 justify-between' : 'px-6 justify-center'} 
-                    ${currentPage === item.page && !item.subItems ? (theme === 'dark' ? 'bg-gray-700 text-white' : 'bg-white bg-opacity-20 text-white') : (theme === 'dark' ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-100 hover:bg-white hover:bg-opacity-10')}
-                    ${item.subItems && isAccordionOpen && showExpanded ? (theme === 'dark' ? 'bg-gray-700' : 'bg-white bg-opacity-10') : ''}
-                  `}
-                >
+                <button onClick={() => handleMainItemClick(item)} title={!showExpanded ? item.name : ''} className={`${buttonClasses} ${stateClasses}`}>
                   <div className="flex items-center">
                     <item.icon className={`h-5 w-5 flex-shrink-0 ${showExpanded ? 'mr-3' : 'mx-auto'}`} />
-                    {showExpanded && <span className="truncate">{item.name}</span>}
+                    {showExpanded && <span className={`truncate transition-opacity duration-200 ease-in-out ${showExpanded ? 'opacity-100' : 'opacity-0'}`}>{item.name}</span>}
                   </div>
                   {item.subItems && showExpanded && (isAccordionOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />)}
                 </button>
-
-                {/* Submenu */}
-                <div 
-                  className={`transition-all duration-300 ease-in-out overflow-hidden ${isAccordionOpen && showExpanded ? 'max-h-96' : 'max-h-0'} ${theme === 'dark' ? 'bg-gray-750' : 'bg-black bg-opacity-10'}`}
-                >
-                 {item.subItems && item.subItems.map(subItem => (
-                    <button
-                      key={subItem.name}
-                      onClick={() => handleSubmenuNavigate(subItem.page)}
-                      title={!showExpanded ? subItem.name : ''}
-                      className={`
-                        w-full text-left py-2.5 text-xs transition-colors duration-200 flex items-center whitespace-nowrap
-                        ${showExpanded ? 'pl-12 pr-6' : 'px-6 justify-center'} 
-                        ${currentPage === subItem.page ? (theme === 'dark' ? 'text-white font-semibold' : 'text-white font-semibold') : (theme === 'dark' ? 'text-gray-400 hover:text-white' : 'text-gray-200 hover:text-white')}
-                      `}
-                    >
-                       <subItem.icon className={`h-4 w-4 flex-shrink-0 ${showExpanded ? 'mr-2' : 'mx-auto'}`} />
-                      {showExpanded && <span className="truncate">{subItem.name}</span>}
-                    </button>
-                  ))}
+                <div className={`transition-all duration-300 ease-in-out overflow-hidden ${isAccordionOpen && showExpanded ? 'max-h-96' : 'max-h-0'} ${theme === 'dark' ? 'bg-gray-750' : 'bg-black bg-opacity-10'}`}>
+                 {showExpanded && item.subItems && item.subItems.map(subItem => { 
+                    const subItemIsActive = isActive(subItem.page);
+                    let subButtonClasses = `w-full text-left py-2.5 text-xs transition-colors duration-200 flex items-center whitespace-nowrap ${showExpanded ? 'pl-12 pr-6' : 'justify-center pl-6'}`;
+                    let subStateClasses = subItemIsActive ? (theme === 'dark' ? 'text-white font-semibold' : 'text-white font-semibold') : (theme === 'dark' ? 'text-gray-400 hover:text-white' : 'text-gray-200 hover:text-white');
+                    return (
+                      <button key={subItem.name} onClick={() => handleSubmenuNavigate(subItem.page)} title={!showExpanded ? subItem.name : ''} className={`${subButtonClasses} ${subStateClasses}`}>
+                         <subItem.icon className={`h-4 w-4 flex-shrink-0 ${showExpanded ? 'mr-2' : 'mx-auto'}`} />
+                        {showExpanded && <span className="truncate">{subItem.name}</span>}
+                      </button>
+                    );
+                 })}
                 </div>
               </div>
             );
@@ -414,27 +653,17 @@ function Sidebar({ currentPage, onLogout, isMobile }) {
         </nav>
       </div>
 
-      {/* Logout Button */}
-      <div className="p-4 border-t" style={{borderColor: theme === 'dark' ? 'rgb(55 65 81)' : 'rgba(255,255,255,0.2)'}}>
-        <button
-          onClick={onLogout}
-          title={!showExpanded ? "Sair" : ''}
-          className={`
-            w-full flex items-center py-3 text-sm rounded-lg transition-colors duration-200 whitespace-nowrap
-            ${showExpanded ? 'px-6' : 'px-6 justify-center'} 
-            ${theme === 'dark' ? 'text-gray-300 hover:bg-red-700 hover:text-white' : 'text-gray-100 hover:bg-red-500 hover:bg-opacity-80'}
-          `}
-        >
-          {/* Ensure icon is always visible */}
+      <div className="p-4 border-t flex-shrink-0" style={{borderColor: theme === 'dark' ? 'rgb(55 65 81)' : 'rgba(255,255,255,0.2)'}}>
+        <button onClick={onLogout} title={!showExpanded ? "Sair" : ''} className={`w-full flex items-center py-3 text-sm rounded-lg transition-colors duration-200 whitespace-nowrap ${showExpanded ? 'px-6' : 'px-6 justify-center'} ${theme === 'dark' ? 'text-gray-300 hover:bg-red-700 hover:text-white' : 'text-gray-100 hover:bg-red-500 hover:bg-opacity-80'}`}>
           <LogOut className={`h-5 w-5 flex-shrink-0 ${showExpanded ? 'mr-3' : 'mx-auto'}`} />
-          {showExpanded && <span className="truncate">Sair</span>}
+          {showExpanded && <span className={`truncate transition-opacity duration-200 ease-in-out ${showExpanded ? 'opacity-100' : 'opacity-0'}`}>Sair</span>}
         </button>
       </div>
     </div>
   );
 }
 
-// --- Header Component --- (No significant changes needed, kept for context)
+// --- Header Component ---
 function Header({ currentPage, onLogout, setCurrentPage }) { 
   const { theme, toggleTheme } = useTheme();
   const { toggleMobileSidebar } = useSidebar(); 
@@ -450,7 +679,7 @@ function Header({ currentPage, onLogout, setCurrentPage }) {
   };
 
   return (
-    <header className={`shadow-md py-3 px-4 md:px-6 flex items-center justify-between sticky top-0 z-10 ${theme === 'dark' ? 'bg-gray-800 border-b border-gray-700' : BRAND_COLORS.backgroundWhite + ' border-b border-gray-200'}`}> {/* Make header sticky */}
+    <header className={`shadow-md py-3 px-4 md:px-6 flex items-center justify-between sticky top-0 z-20 ${theme === 'dark' ? 'bg-gray-800 border-b border-gray-700' : BRAND_COLORS.backgroundWhite + ' border-b border-gray-200'}`}> 
       <div className="flex items-center">
          <button 
            onClick={toggleMobileSidebar} 
@@ -517,6 +746,12 @@ function Header({ currentPage, onLogout, setCurrentPage }) {
               >
                 Configurações
               </button>
+               <button 
+                 onClick={() => { setCurrentPage('Cadastro de Usuário'); setDropdownOpen(false); }} 
+                 className={`block w-full text-left px-4 py-2 text-sm ${theme === 'dark' ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-700 hover:bg-gray-100'}`}
+               >
+                 Cadastrar Usuário
+               </button>
               <div className={`${theme === 'dark' ? 'border-t border-gray-700' : 'border-t border-gray-100'} my-1`}></div>
               <button 
                 onClick={onLogout} 
@@ -532,7 +767,7 @@ function Header({ currentPage, onLogout, setCurrentPage }) {
   );
 }
 
-// --- Generic Card Component --- (No changes)
+// --- Generic Card Component ---
 function Card({ title, children, icon, className = "" }) {
   const { theme } = useTheme();
   const IconComponent = icon;
@@ -551,7 +786,7 @@ function Card({ title, children, icon, className = "" }) {
   );
 }
 
-// --- DashboardPage Component --- (No changes)
+// --- DashboardPage Component ---
 function DashboardPage() {
   const { theme } = useTheme();
   const salesData = [
@@ -694,9 +929,41 @@ function DashboardPage() {
 }
 
 
-// --- PlaceholderPage Component --- (No changes)
+// --- PlaceholderPage Component ---
 function PlaceholderPage({ title }) {
   const { theme } = useTheme();
+
+  if (title === 'Cadastro de Usuário') {
+     return (
+       <Card title="Cadastro de Usuário" icon={UserPlus} className="max-w-lg mx-auto">
+          <p className="text-center mb-6">Esta é a área onde o formulário de cadastro seria implementado, interagindo com um serviço de backend seguro (como Firebase ou Supabase) para armazenar os dados do novo usuário.</p>
+           <form className="space-y-4">
+              <div>
+                  <label className={`block text-sm font-medium ${theme === 'dark' ? 'text-gray-300' : BRAND_COLORS.textSecondary}`}>Nome</label>
+                  <input type="text" disabled className={`mt-1 block w-full px-3 py-2 rounded-md border ${theme === 'dark' ? 'bg-gray-700 border-gray-600 cursor-not-allowed' : 'bg-gray-100 border-gray-300 cursor-not-allowed'}`} placeholder="Nome Completo" />
+              </div>
+               <div>
+                  <label className={`block text-sm font-medium ${theme === 'dark' ? 'text-gray-300' : BRAND_COLORS.textSecondary}`}>Email</label>
+                  <input type="email" disabled className={`mt-1 block w-full px-3 py-2 rounded-md border ${theme === 'dark' ? 'bg-gray-700 border-gray-600 cursor-not-allowed' : 'bg-gray-100 border-gray-300 cursor-not-allowed'}`} placeholder="seuemail@example.com" />
+              </div>
+               <div>
+                  <label className={`block text-sm font-medium ${theme === 'dark' ? 'text-gray-300' : BRAND_COLORS.textSecondary}`}>Senha</label>
+                  <input type="password" disabled className={`mt-1 block w-full px-3 py-2 rounded-md border ${theme === 'dark' ? 'bg-gray-700 border-gray-600 cursor-not-allowed' : 'bg-gray-100 border-gray-300 cursor-not-allowed'}`} placeholder="********" />
+              </div>
+               <button 
+                 type="button" 
+                 disabled 
+                 className="w-full py-2 px-4 rounded-md text-white font-medium cursor-not-allowed" 
+                 style={{backgroundColor: BRAND_COLORS.primaryGreen, opacity: 0.5}}
+               >
+                 Cadastrar (Desabilitado)
+               </button>
+           </form>
+           <p className="text-xs text-center mt-4 text-red-500">Nota: O cadastro real requer implementação de backend.</p>
+       </Card>
+     );
+  }
+
   return (
     <Card title={`Página: ${title}`} className="h-full">
       <div className="flex flex-col items-center justify-center h-full text-center">
@@ -718,12 +985,13 @@ function PlaceholderPage({ title }) {
   );
 }
 
-// --- Function to render the current page --- (No changes)
+// --- Function to render the current page ---
 function renderPage(pageName) {
   switch (pageName) {
     case 'Visão Geral':
       return <DashboardPage />;
-    // ... other cases
+    case 'Cadastro de Usuário': 
+      return <PlaceholderPage title={pageName} />; 
     case 'Comercialização Soja':
     case 'Comercialização Milho':
     case 'Comercialização Algodão':
@@ -742,8 +1010,10 @@ function renderPage(pageName) {
     case 'Configurações':
       return <PlaceholderPage title={pageName} />;
     default:
-      return <DashboardPage />;
+      console.warn(`Unhandled page: ${pageName}. Rendering Dashboard.`); 
+      return <DashboardPage />; // Fallback to Dashboard
   }
 }
 
 export default App;
+
